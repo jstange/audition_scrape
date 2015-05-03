@@ -8,7 +8,6 @@ require "nokogiri"
 require "cgi"
 require "etc"
 require "trollop"
-require "pp"
 
 $footer_msg = "-- If they won't invite you in, <a href='http://38.media.tumblr.com/tumblr_lk65pfPql21qzi80do1_500.gif'>kick down the door</a>."
 $admin_addr = "stange@johnstange.net"
