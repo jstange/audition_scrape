@@ -9,9 +9,15 @@ require "cgi"
 require "etc"
 require "trollop"
 
+home = Etc.getpwuid(Process.uid).dir
 $footer_msg = "-- If they won't invite you in, <a href='http://38.media.tumblr.com/tumblr_lk65pfPql21qzi80do1_500.gif'>kick down the door</a>."
 $admin_addr = "stange@johnstange.net"
 $recips = [$admin_addr]
+if File.exists?("#{home}/.audition_recips")
+  File.open("#{home}/.audition_recips", "r").each_line { |line|
+    $recips << line.chomp if line.match(/@/)
+  }
+end
 
 $opts = Trollop::options do
   banner <<-EOS
@@ -21,7 +27,6 @@ Usage:
   opt :all, "Show all harvested notices, instead of just new ones.", :require => false, :default => false, :type => :boolean
 end
 
-home = Etc.getpwuid(Process.uid).dir
 if File.exists?("#{home}/.notice_cache")
   $notices = Marshal.load(File.read("#{home}/.notice_cache"))
 else
@@ -103,23 +108,6 @@ end
 
 def scrape_backstage
   uri = URI.parse("http://www.backstage.com/casting/")
-  params = {
-    "gender" => "M",
-    "gender" => "F",
-    "min_age" => "1",
-    "max_age" => "120",
-    "pt" => "55",
-    "pt" => "60",
-    "role_type" => "",
-    "compensation" => "true",
-    "union_status" => "",
-    "location" => "Washington, DC",
-    "geo" => "-77.03687070000001%2C38.9071923",
-    "radius" => "50",
-    "exclude_nationwide" => "true",
-    "q" => "",
-    "sort_by" => "newest"
-  }
   uri.query = "gender=M&gender=F&min_age=1&max_age=120&pt=55&pt=60&role_type=&compensation=true&union_status=&location=Washington%2C+DC&geo=-77.03687070000001%2C38.9071923&radius=50&exclude_nationwide=true&q=&sort_by=newest&page=1"
   body = Net::HTTP.get_response(uri).body
   html_doc = Nokogiri::HTML(body)
