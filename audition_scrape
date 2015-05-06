@@ -149,12 +149,13 @@ keys = $notices.each_key.sort { |a, b|
   end
 }
 count = 0
+
 keys.each { |name|
   data = $notices[name]
   next if !$opts[:all] and data['firstseen'] != $runtime
   count = count + 1
   msg_body = msg_body + "<p>"
-  if data['firstseen'] == $runtime
+  if data['firstseen'].to_s == $runtime.to_s
     msg_body = msg_body + "NEW: "
   end
   msg_body = msg_body + "<a href='#{data['url']}'>#{name}</a></p>\n"
@@ -168,10 +169,12 @@ MIME-Version: 1.0
 Subject: Wack-Ass Equity Audition Postings
 Content-type: text/html
     
+
 #{msg_body}
 
 #{$footer_msg}
 MESSAGE_END
+
 Net::SMTP.start('localhost') { |smtp|
   smtp.send_message message, $admin_addr, $recips
 }
