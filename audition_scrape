@@ -36,9 +36,14 @@ end
 $opts = Trollop::options do
   banner <<-EOS
 Usage:
-#{$0} [-a]
+#{$0} [-a] [-t]
   EOS
   opt :all, "Show all harvested notices, instead of just new ones.", :require => false, :default => false, :type => :boolean
+  opt :test, "Send results to admin address only, and don't save cache.", :require => false, :default => false, :type => :boolean
+end
+
+if $opts[:test]
+  $recips = [$admin_addr]
 end
 
 if File.exists?("#{home}/.notice_cache")
@@ -143,11 +148,16 @@ deletia.each { |defunct|
   $notices.delete(defunct)
 }
 
-File.open("#{home}/.notice_cache", 'w') { |file|
-  file.write Marshal.dump($notices)
-}
+if !$opts[:test]
+  File.open("#{home}/.notice_cache", 'w') { |file|
+    file.write Marshal.dump($notices)
+  }
+end
 
 msg_body = ""
+if $opts[:all]
+  msg_body = msg_body + "<p>Here's a recap of everything I've harvested lately!</p>"
+end
 keys = $notices.each_key.sort { |a, b|
   if $notices[a]['firstseen'] == $notices[b]['firstseen']
     val = a <=> b
@@ -175,7 +185,7 @@ To: #{$admin_addr}
 MIME-Version: 1.0
 Subject: Wack-Ass Equity Audition Postings
 Content-type: text/html
-    
+
 
 #{msg_body}
 
