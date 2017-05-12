@@ -1,5 +1,7 @@
 #!/usr/bin/ruby
 
+ENV['PATH'] = File.realpath(File.expand_path(File.dirname(__FILE__)))+"/phantomjs/bin:"+ENV['PATH']
+
 require "pp"
 require "net/http"
 require "net/smtp"
@@ -9,6 +11,17 @@ require "cgi"
 require "etc"
 require "trollop"
 require 'open-uri'
+require 'capybara'
+require 'capybara/dsl'
+require 'capybara/poltergeist'
+
+Capybara.register_driver :poltergeist do |app|
+  Capybara::Poltergeist::Driver.new(app, {:js_errors => false})
+end
+Capybara.default_driver = :poltergeist
+Capybara.javascript_driver = :poltergeist
+Capybara.run_server = false
+#js_errors: false
 
 home = Etc.getpwuid(Process.uid).dir
 $footer_msg = "-- If they won't invite you in, <a href='http://38.media.tumblr.com/tumblr_lk65pfPql21qzi80do1_500.gif'>kick down the door</a>."
@@ -55,14 +68,13 @@ def scrape_playbill
     body = Net::HTTP.get_response(uri).body
     html_doc = Nokogiri::HTML(body)
     html_doc.css("table.bsp-table tr").each { |listing|
-      titlelink = listing.children.first.css("a span").text
-      namestr = "Playbill - #{CGI.unescapeHTML(titlelink.to_s)}"
-      if !$notices.has_key?(namestr)
-        $notices[namestr] = {}
-        $notices[namestr]['firstseen'] = $runtime
-      end
-      $notices[namestr]['url'] = "http://www.playbill.com"+listing.children.first.css("a").first.attributes['href']
-      $notices[namestr]['lastseen'] = $runtime
+      (listing.children>("a")).each { |chunk|
+        namestr = "Playbill - "+CGI.unescapeHTML(chunk.children.first.children.to_s)
+        $notices[namestr] ||= {}
+        $notices[namestr]['url'] = "http://www.playbill.com"+chunk.attributes["href"].to_s
+        $notices[namestr]['firstseen'] ||= $runtime
+        $notices[namestr]['lastseen'] = $runtime
+      }
     }
   }
 end
@@ -97,34 +109,35 @@ def scrape_actorsequity
       }
     end
   }
+exit
 end
 
 def scrape_backstage
+  include Capybara::DSL
   uri = URI.parse("https://www.backstage.com/casting/")
-  uri.query = "gender=B&min_age=0&max_age=99&pt=55&pt=60&pt=69&pt=70&compensation=true&union_status=&location=Washington%2C+DC&geo=-77.03687070000001%2C38.9071923&radius=50.0&exclude_nationwide=true&q=&sort_by=newest&page=1"
-  body = open(uri.to_s).read
-  html_doc = Nokogiri::HTML(body)
-  html_doc.css("a.callLink").each { |listing|
-    namestr = "Backstage - #{CGI.unescapeHTML(listing.children.first.children.first.to_s)}"
-    if !$notices.has_key?(namestr)
-      $notices[namestr] = {}
-      $notices[namestr]['firstseen'] = $runtime
-    end
-    $notices[namestr]['url'] = listing.attributes['href'].value
-    $notices[namestr]['url'] = "http://www.backstage.com/"+$notices[namestr]['url'] if !$notices[namestr]['url'].match(/^http/)
+  uri.query = "compensation=true&exclude_nationwide=true&gender=B&geo=-77.0368707%2C38.9071923&location=Washington%2C+DC%2C+USA&max_age=100&min_age=0&page=1&pt=60&pt=69&pt=70&radius=50&sort_by=newest"
+  visit(uri.to_s)
+  html_doc = Nokogiri::HTML(page.html)
+  html_doc.css("h3.prod__title > a").each { |listing|
+    namestr = "Backstage - "+CGI.unescapeHTML(listing.children.first.to_s)
+    $notices[namestr] ||= {}
+    $notices[namestr]['url'] = "https://www.backstage.com"+listing.attributes["href"].to_s
+    $notices[namestr]['firstseen'] ||= $runtime
     $notices[namestr]['lastseen'] = $runtime
   }
 end
 
 scrape_playbill
-scrape_actorsequity
+#scrape_actorsequity
 scrape_backstage
-
 
 # Scrub anything that no longer shows up
 deletia = []
 $notices.each_pair { |name, data|
-  deletia << name if data['lastseen'] < $runtime
+  stamp = (data['lastseen'] || data['firstseen'] || 0)
+  if stamp < $runtime
+    deletia << name
+  end
 }
 deletia.each { |defunct|
   $notices.delete(defunct)
@@ -169,7 +182,6 @@ Content-type: text/html
 #{$footer_msg}
 MESSAGE_END
 
-puts message
 Net::SMTP.start('localhost') { |smtp|
   smtp.send_message message, $admin_addr, $recips
 }
