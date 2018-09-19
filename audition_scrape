@@ -15,13 +15,35 @@ require 'capybara'
 require 'capybara/dsl'
 require 'capybara/poltergeist'
 
-Capybara.register_driver :poltergeist do |app|
-  Capybara::Poltergeist::Driver.new(app, {:js_errors => false})
+def load_capybara
+  Capybara.default_driver = :poltergeist
+  #Capybara.javascript_driver = :poltergeist
+  Capybara.run_server = false
+  Capybara.register_driver :poltergeist do |app|
+    driver = Capybara::Poltergeist::Driver.new(
+      app,
+      js_errors: false,
+#      debug: true,
+      timeout: 120,
+      phantomjs: File.realpath(File.expand_path(File.dirname(__FILE__)))+"/phantomjs/bin/phantomjs",
+      phantomjs_options: ['--ignore-ssl-errors=yes', '--local-to-remote-url-access=yes', '--load-images=false', '--local-to-remote-url-access=true', '--ssl-protocol=TLSv1.2'] # '--debug=true'
+    )
+  #  driver.browser.url_whitelist = %w(
+  #    backstage.com
+  #    www.backstage.com
+  #  )
+    driver
+  end
+  
+  Capybara.configure do |config|
+    config.run_server = false
+    config.default_driver = :poltergeist
+    config.javascript_driver = :poltergeist
+  end
+  Capybara.use_default_driver
 end
-Capybara.default_driver = :poltergeist
-Capybara.javascript_driver = :poltergeist
-Capybara.run_server = false
-#js_errors: false
+
+$exitcode = 0
 
 home = Etc.getpwuid(Process.uid).dir
 $footer_msg = "-- If they won't invite you in, <a href='http://38.media.tumblr.com/tumblr_lk65pfPql21qzi80do1_500.gif'>kick down the door</a>."
@@ -118,11 +140,25 @@ exit
 end
 
 def scrape_backstage
+  oldstderr = $stderr.clone
+  $stderr.reopen("/dev/null", "w")
   include Capybara::DSL
+  load_capybara
+  $stderr = oldstderr
+#  Capybara.reset_sessions!
   uri = URI.parse("https://www.backstage.com/casting/")
   uri.query = "compensation=true&exclude_nationwide=true&gender=B&geo=-77.0368707%2C38.9071923&location=Washington%2C+DC%2C+USA&max_age=100&min_age=0&page=1&pt=60&pt=69&pt=70&radius=50&sort_by=newest"
-  visit(uri.to_s)
-  html_doc = Nokogiri::HTML(page.html)
+
+  html_doc = nil
+  begin
+    visit(uri.to_s)
+    html_doc = Nokogiri::HTML(page.html)
+  rescue Capybara::Poltergeist::StatusFailError => e
+    puts e.message
+    $exitcode = 1
+    return
+  end
+
   html_doc.css("h3.prod__title > a").each { |listing|
     namestr = "Backstage - "+CGI.unescapeHTML(listing.children.first.to_s)
     $notices[namestr] ||= {}
@@ -177,7 +213,7 @@ keys.each { |name|
   end
   msg_body = msg_body + "<a href='#{data['url']}'>#{name}</a></p>\n"
 }
-exit if count == 0
+exit 0 if count == 0
 
 message = <<MESSAGE_END
 From: #{$admin_addr}
@@ -195,3 +231,4 @@ MESSAGE_END
 Net::SMTP.start('localhost') { |smtp|
   smtp.send_message message, $admin_addr, $recips
 }
+exit $exitcode
