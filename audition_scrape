@@ -91,12 +91,12 @@ end
 def scrape_playbill
   ["MD", "DC", "VA"].each { |state|
     uri = URI.parse("http://www.playbill.com/job/listing")
-    uri.query = "q=&category=Performer&date=&state=#{state}&paid=on"
+    uri.query = "q=&category=Performer&state=#{state}&paid=on&union=&intern="
     body = Net::HTTP.get_response(uri).body
     html_doc = Nokogiri::HTML(body)
-    html_doc.css("table.bsp-table tr").each { |listing|
-      (listing.children>("a")).each { |chunk|
-        namestr = "Playbill - "+CGI.unescapeHTML(chunk.children.first.children.to_s)
+    html_doc.css("div.event-listing-table div.pb-tile-wrapper").each { |listing|
+      (listing.css("a")).each { |chunk|
+        namestr = "Playbill - "+CGI.unescapeHTML(chunk.css("div.pb-tile-title").children.first.to_s.strip)
         $notices[namestr] ||= {}
         $notices[namestr]['url'] = "http://www.playbill.com"+chunk.attributes["href"].to_s
         $notices[namestr]['firstseen'] ||= $runtime
@@ -104,39 +104,6 @@ def scrape_playbill
       }
     }
   }
-end
-
-def scrape_actorsequity
-  uri = URI.parse("http://www.actorsequity.org/CastingCall/search_auditions.asp")
-  params = {
-    "NoticeType" => "1",
-    "CallType" => "0",
-    "Region" => "01",
-    "Contract" => "0"
-  }
-  body = formpost(uri, params)
-
-  html_doc = Nokogiri::HTML(body)
-  html_doc.css("p.cc_headline").each { |listing|
-    catch (:wrongstate) do
-      listing.children.each { |elt|
-        if elt.class == Nokogiri::XML::Text
-          if CGI.unescapeHTML(elt.to_s).match(/&nbsp;in&nbsp;.*?, [A-Z]{2}$/)
-            throw :wrongstate if !elt.to_s.match(/ (DC|MD|VA)$/)
-          end
-        elsif elt.class == Nokogiri::XML::Element and elt.attributes.has_key?("href")
-          namestr = "AEA - #{CGI.unescapeHTML(elt.children.first.to_s)}"
-          if !$notices.has_key?(namestr)
-            $notices[namestr] = {}
-            $notices[namestr]['firstseen'] = $runtime
-          end
-          $notices[namestr]['url'] = "http://www.actorsequity.org/CastingCall/"+elt.attributes['href'].value
-          $notices[namestr]['lastseen'] = $runtime
-        end
-      }
-    end
-  }
-exit
 end
 
 def scrape_backstage
@@ -169,7 +136,6 @@ def scrape_backstage
 end
 
 scrape_playbill
-#scrape_actorsequity
 scrape_backstage
 
 # Scrub anything that no longer shows up
